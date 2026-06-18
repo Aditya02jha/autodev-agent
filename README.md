@@ -216,3 +216,7 @@ Phase 4
 
 Phase 5
 - Autonomous ticket implementation
+
+  Screenshots
+  <img width="1770" height="725" alt="image" src="https://github.com/user-attachments/assets/336f549b-ed36-46b5-a4cf-51f91893f742" />
+
