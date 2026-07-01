@@ -202,15 +202,13 @@ def get_answer(question):
 
 
 def execute_developer_task(task_description):
-    # 1. Find relevant files
     context = get_context(task_description)
-
+    
     llm = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash", 
+        model="gemini-2.5-flash",
         google_api_key=os.getenv("GEMINI_API_KEY")
     )
 
-    # 2. Ask the AI to provide the full path and the full content of the file to change
     prompt = f"""
     You are an AI Developer Master Service.
     TASK: {task_description}
@@ -221,42 +219,54 @@ def execute_developer_task(task_description):
     INSTRUCTIONS:
     1. Analyze the context.
     2. Provide the code changes required.
-    3. Respond ONLY in the following JSON format:
-    {{
+    3. Respond ONLY in the following JSON format — always an ARRAY, even for one file:
+    [
+      {{
         "file_path": "full/path/to/file.java",
         "new_content": "the complete code for the file",
         "explanation": "what you did",
         "service_folder": "folder_name_where_pom_is"
-    }}
+      }}
+    ]
     """
-    
+
     response = llm.invoke(prompt)
-    
-    # 3. Parse the AI's decision
+
     try:
-        # We strip any markdown formatting if Gemini adds it
         json_str = response.content.replace("```json", "").replace("```", "").strip()
         data = json.loads(json_str)
-        
-        file_path = data['file_path']
-        content = data['new_content']
-        service_folder = data['service_folder']
 
-        # 4. ACTION: Write the file
-        write_result = write_file(file_path, content)
-        print(write_result)
+        # normalize — always work with a list
+        if isinstance(data, dict):
+            data = [data]
 
-        # 5. VERIFY: Run Maven
+        results = []
         root_path = os.getenv("PROJECT_ROOT_PATH")
-        full_service_path = os.path.join(root_path, service_folder)
+
+        for item in data:
+            file_path     = item['file_path']
+            content       = item['new_content']
+            service_folder = item['service_folder']
+            explanation   = item['explanation']
+
+            # write the file
+            write_result = write_file(file_path, content)
+            print(write_result)
+
+            results.append({
+                "file": file_path,
+                "explanation": explanation
+            })
+
+        # run maven ONCE after all files are written
+        full_service_path = os.path.join(root_path, data[0]['service_folder'])
         test_result = run_maven_test(full_service_path)
-        
+
         return {
             "status": "Applied",
-            "explanation": data['explanation'],
+            "files_changed": results,
             "test_result": test_result
         }
 
     except Exception as e:
         return {"status": "Error", "message": str(e), "raw_ai_response": response.content}
-        
