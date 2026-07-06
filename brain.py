@@ -171,9 +171,11 @@ def generate_changes_only(task_description: str) -> dict:
 
     # Build context
     file_contexts = []
+    existing_content_by_path = {}
 
     for af in plan.affected_files:
         content = read_full_file(af.full_path)
+        existing_content_by_path[af.full_path] = content
 
         if content:
             file_contexts.append(
@@ -244,6 +246,17 @@ def generate_changes_only(task_description: str) -> dict:
     if isinstance(data, dict):
         data = [data]
 
+    # Attach old_content to each change so the frontend can render a real
+    # diff instead of treating every file as brand new. Falls back to a
+    # direct disk read if the LLM's file_path doesn't exactly match one of
+    # the paths we already fetched for context.
+    for item in data:
+        file_path = item.get("file_path", "")
+        old_content = existing_content_by_path.get(file_path)
+        if old_content is None:
+            old_content = read_full_file(file_path)
+        item["old_content"] = old_content or ""
+
     return {
         "plan_summary": plan.summary,
         "changes": data
@@ -279,8 +292,8 @@ def write_and_build(changes: list) -> dict:
 
     for folder in service_folders:
 
-        full_service_path = os.path.join(root_path, folder)
-
+        # full_service_path = os.path.join(root_path, folder)
+        full_service_path = root_path
         print(f"Running Maven in {full_service_path}")
 
         maven_results[folder] = run_maven_test(full_service_path)

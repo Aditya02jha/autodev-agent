@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local persisted app state (sandboxes + history) — machine-specific, not source
+autodev_state.db
+autodev_state.db-shm
+autodev_state.db-wal
+
+# Vector store (regenerate with POST /index)
+chroma_db/
+
+# Frontend
+autodev-ui/node_modules/
+autodev-ui/dist/
+
+# Env
+.env
+.env.local

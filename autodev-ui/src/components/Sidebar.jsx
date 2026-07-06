@@ -1,3 +1,5 @@
+import { api } from "../lib/api";
+
 const NAV = [
   { id: "sandbox", icon: "⚡", label: "Sandbox" },
   { id: "history", icon: "🕓", label: "History" },
@@ -7,10 +9,10 @@ const NAV = [
 export default function Sidebar({ view, setView, indexed }) {
   async function reindex() {
     try {
-      await fetch("http://localhost:8000/index", { method: "POST" });
+      await api.post("/index");
       alert("Re-indexed.");
-    } catch {
-      alert("Could not reach server at localhost:8000");
+    } catch (e) {
+      alert(e.message || "Could not reach the AutoDev server");
     }
   }
 

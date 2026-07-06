@@ -17,15 +17,26 @@ def run_maven_test(project_path):
     try:
         # We run maven in the specific microservice folder
         result = subprocess.run(
-            ["mvn", "test"], 
+            ["mvn","clean","test"], 
             cwd=project_path, 
             capture_output=True, 
             text=True,
             shell=True # Required for Windows
         )
+        output = (result.stdout or "") + "\n" + (result.stderr or "")
+
         if result.returncode == 0:
-            return "SUCCESS: All tests passed."
+            return {
+                "status":"Passed",
+                "output":output
+            }
         else:
-            return f"FAILURE: Tests failed. Error: {result.stdout[-1000:]}" # Last 1000 chars
+            return {
+                "status":"Failed",
+                "output":output
+            }
     except Exception as e:
-        return f"Error running maven: {str(e)}"
+        return {
+            "status":"Error",
+            "output":f"Error running maven test: {str(e)}"
+        }

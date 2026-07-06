@@ -1,19 +1,20 @@
 from fastapi import FastAPI, HTTPException
 from contextlib import asynccontextmanager
 import uvicorn
-from uuid import uuid4
 from brain import index_codebase, get_answer
 from planner import create_plan
 from models import TaskRequest, PlanRequest, ApplyRequest
 from fastapi.middleware.cors import CORSMiddleware
+import storage
 
-
-# In-memory sandbox — stores pending changes before apply
-pending_sandbox: dict = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Index the codebase on startup so /ask, /plan, /execute are ready immediately
+    # Create the sqlite tables if they don't exist yet, and sweep out any
+    # sandboxes that were left pending past their TTL (e.g. server was
+    # restarted mid-review, or the tab was closed and never came back).
+    storage.init_db()
+    storage.cleanup_expired_sandboxes()
     # index_codebase()
     yield
     # Nothing to clean up on shutdown
@@ -67,13 +68,36 @@ def plan(body: PlanRequest):
 def generate(body: TaskRequest):
     """
     Runs plan + code generation but does NOT write files.
-    Returns a sandbox_id and the list of proposed changes for the UI to display.
+    Persists the proposed changes and returns a sandbox_id for the UI to
+    display, review, and later apply or reject.
     """
-    from brain import generate_changes_only   
-    changes = generate_changes_only(body.task)
-    sandbox_id = str(uuid4())
-    pending_sandbox[sandbox_id] = changes
-    return {"sandbox_id": sandbox_id, "changes": changes["changes"]}
+    from brain import generate_changes_only
+
+    storage.cleanup_expired_sandboxes()
+
+    result = generate_changes_only(body.task)
+    sandbox_id = storage.save_sandbox(
+        task=body.task,
+        plan_summary=result.get("plan_summary", ""),
+        changes=result["changes"],
+    )
+    return {
+        "sandbox_id": sandbox_id,
+        "plan_summary": result.get("plan_summary", ""),
+        "changes": result["changes"],
+    }
+
+
+@app.get("/sandbox/{sandbox_id}")
+def get_sandbox(sandbox_id: str):
+    """
+    Rehydrate a pending sandbox — used by the frontend on page load/refresh
+    so an in-progress review isn't lost just because the tab was reloaded.
+    """
+    sandbox = storage.get_sandbox(sandbox_id)
+    if not sandbox or sandbox["status"] != "pending":
+        raise HTTPException(404, "Sandbox not found or already resolved")
+    return sandbox
 
 
 @app.post("/apply/{sandbox_id}")
@@ -81,26 +105,60 @@ def apply(sandbox_id: str, body: ApplyRequest):
     """
     User clicked Apply — NOW write files to disk and run Maven.
     """
-    if sandbox_id not in pending_sandbox:
+    sandbox = storage.get_sandbox(sandbox_id)
+    if not sandbox or sandbox["status"] != "pending":
         raise HTTPException(404, "Sandbox not found or already applied")
-    all_changes = pending_sandbox.pop(sandbox_id)
- 
+
+    all_changes = sandbox["changes"]
+
     # Filter to approved subset (if the frontend sends indices)
     if body.approved_indices is not None:
         approved = [all_changes[i] for i in body.approved_indices if i < len(all_changes)]
     else:
-        approved = all_changes   # apply everything if no filter sent
- 
+        approved = all_changes  # apply everything if no filter sent
+
     from brain import write_and_build
     result = write_and_build(approved)
-    return result
+
+    build_passed = bool(result.get("maven_results")) and all(
+        isinstance(r, str) and "BUILD SUCCESS" in r
+        for r in result["maven_results"].values()
+    )
+
+    history_entry = storage.add_history_entry(
+        ticket=sandbox["task"],
+        files_changed=len(approved),
+        status="passed" if build_passed else "failed",
+        result=result,
+        sandbox_id=sandbox_id,
+    )
+
+    # The sandbox has been resolved — remove it so it can't be re-applied,
+    # but the outcome now lives permanently in the history table.
+    storage.delete_sandbox(sandbox_id)
+
+    return {**result, "history_entry": history_entry}
 
 
 @app.delete("/sandbox/{sandbox_id}")
 def reject(sandbox_id: str):
     """User rejected — clear the sandbox, nothing was written."""
-    pending_sandbox.pop(sandbox_id, None)
+    storage.delete_sandbox(sandbox_id)
     return {"status": "rejected"}
+
+
+@app.get("/history")
+def history(limit: int = 200):
+    """Full run history, most recent first — persisted, survives restarts."""
+    return {"history": storage.get_history(limit=limit)}
+
+
+@app.delete("/history")
+def clear_history():
+    """Clear all persisted run history."""
+    storage.clear_history()
+    return {"status": "cleared"}
+
 
 @app.post("/index")
 def reindex():

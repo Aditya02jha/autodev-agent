@@ -29,17 +29,14 @@ export default function BuildResult({ result, onDismiss }) {
       </div>
 
       {Object.entries(result.maven_results || {}).map(([folder, output]) => {
-        const passed =
-          typeof output === "string" && output.includes("BUILD SUCCESS");
+        const passed = output?.status === "Passed";
         return (
           <details key={folder} className="maven-details">
-            <summary className={passed ? "maven-pass" : "maven-fail"}>
+            <summary className={passed ? "Passed" : "Failed"}>
               {passed ? "✓" : "✗"} mvn test — {folder}
             </summary>
             <pre className="maven-log">
-              {typeof output === "string"
-                ? output
-                : JSON.stringify(output, null, 2)}
+              {output?.output || "No output available"}
             </pre>
           </details>
         );

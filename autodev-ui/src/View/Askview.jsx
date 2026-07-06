@@ -1,36 +1,34 @@
 import { useState } from "react";
+import { useApp } from "../context/AppContext";
+import { api } from "../lib/api";
 
-const API = "http://localhost:8000";
+const SUGGESTIONS = [
+  "What REST endpoints exist?",
+  "Where is Redis used?",
+  "What does EmployeeService do?",
+  "List all database entities",
+];
 
 export default function AskView() {
-  const [q, setQ] = useState("");
-  const [answer, setAnswer] = useState("");
+  const { ask, setAsk } = useApp();
+  const { q, answer } = ask;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  async function ask() {
+  async function askQuestion() {
     if (!q.trim()) return;
     setLoading(true);
-    setAnswer("");
+    setAsk((a) => ({ ...a, answer: "" }));
     setError("");
     try {
-      const res = await fetch(`${API}/ask?q=${encodeURIComponent(q)}`);
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setAnswer(data.answer);
+      const data = await api.get(`/ask?q=${encodeURIComponent(q)}`);
+      setAsk((a) => ({ ...a, answer: data.answer }));
     } catch (e) {
       setError(e.message || "Failed to get answer");
     } finally {
       setLoading(false);
     }
   }
-
-  const SUGGESTIONS = [
-    "What REST endpoints exist?",
-    "Where is Redis used?",
-    "What does EmployeeService do?",
-    "List all database entities",
-  ];
 
   return (
     <div className="ask-view">
@@ -43,14 +41,10 @@ export default function AskView() {
           className="ask-input"
           placeholder="What controllers exist? Where is Redis used?"
           value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && ask()}
+          onChange={(e) => setAsk((a) => ({ ...a, q: e.target.value }))}
+          onKeyDown={(e) => e.key === "Enter" && askQuestion()}
         />
-        <button
-          className="btn-primary"
-          onClick={ask}
-          disabled={!q.trim() || loading}
-        >
+        <button className="btn-primary" onClick={askQuestion} disabled={!q.trim() || loading}>
           {loading ? "Asking…" : "Ask"}
         </button>
       </div>
@@ -60,9 +54,7 @@ export default function AskView() {
           <button
             key={s}
             className="suggestion-chip"
-            onClick={() => {
-              setQ(s);
-            }}
+            onClick={() => setAsk((a) => ({ ...a, q: s }))}
           >
             {s}
           </button>

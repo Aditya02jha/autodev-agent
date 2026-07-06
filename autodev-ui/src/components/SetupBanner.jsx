@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { api } from "../lib/api";
 
 export default function SetupBanner({ onIndexed }) {
   const [loading, setLoading] = useState(false);
@@ -8,15 +9,10 @@ export default function SetupBanner({ onIndexed }) {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("http://localhost:8000/index", {
-        method: "POST",
-      });
-      if (!res.ok) throw new Error(await res.text());
+      await api.post("/index");
       onIndexed();
     } catch (e) {
-      setError(
-        e.message || "Could not reach server. Is uvicorn running on :8000?",
-      );
+      setError(e.message || "Could not reach server. Is uvicorn running on :8000?");
     } finally {
       setLoading(false);
     }
@@ -31,11 +27,7 @@ export default function SetupBanner({ onIndexed }) {
           understand your project.
           {error && <div className="setup-error">{error}</div>}
         </div>
-        <button
-          className="btn-primary small"
-          onClick={index}
-          disabled={loading}
-        >
+        <button className="btn-primary small" onClick={index} disabled={loading}>
           {loading ? "Indexing…" : "Index now"}
         </button>
       </div>
